@@ -12,13 +12,13 @@ import pickle
 import time
 from torchsummary import summary
 from warmup_scheduler import GradualWarmupScheduler
-from terminaltables import AsciiTable
 
 from utils.datasets import trans_voc, ListDataset, val2labels
 from utils.utils import weights_init_normal, exist_or_create_folder, plot_epoch_info
 from model import Darknet
-from dqn_agent import ObjDetEnv
-from detect import evaluate
+from evaluation import evaluate
+from terminaltables import AsciiTable
+
 
 
 def main():
@@ -55,7 +55,6 @@ def main():
     logger = SummaryWriter(exist_or_create_folder("./logs/tb/"))
 
     # Initiate model
-    # model = Darknet(opt.model_def).to(device)
     eval_model = Darknet(opt.model_def).to(device)
     if opt.pretrained_weights:
         print("Initialize model with pretrained_model")
@@ -70,9 +69,7 @@ def main():
     # print(model)
     summary(eval_model, (3, 416, 416))
 
-    learn_epoch_counter = 0  # (total numbers)
     learn_batch_counter = 0  # for logger update (total numbers)
-    # learn_step_counter = 0  # for logger update (total numbers)
     batch_size = opt.batch_size
 
     # Get dataloader
@@ -102,7 +99,6 @@ def main():
                                               after_scheduler=scheduler_cosine)
 
     start_time = time.time()
-    epoch_info = {}
 
     for i_epoch in range(opt.epochs):
         eval_model.train()
@@ -110,20 +106,11 @@ def main():
         for i_batch, (_, imgs, raw_targets, transform_params, tar_boxes) in enumerate(loader):
             print("\n++++++++++ i_epoch-i_batch {}-{} ++++++++++".format(i_epoch, i_batch))
             batch_step_counter = 0
-            batch_loss = []
 
-            if len(imgs) != opt.batch_size:
+            if len(imgs) != batch_size:
                 print("Current batch size is smaller than opt.batch_size!")
                 continue
 
-            # print("imgs.size()")
-            # print(imgs.size())
-            # print("raw_targets")
-            # print(raw_targets.size())
-            # print(raw_targets)
-            # imgs: [3, 416, 416]
-            # imgs = Variable(imgs.to(device))
-            # raw_targets = Variable(raw_targets.to(device), requires_grad=False)
             imgs = imgs.to(device)
             raw_targets = raw_targets.to(device)
             tar_boxes = tar_boxes.to(device)
@@ -140,44 +127,48 @@ def main():
             cls_targets = torch.cat((raw_targets[:, :, :, 0].unsqueeze(3), raw_targets[:, :, :, 6:]), 3)
             # print(cls_targets.size())
 
-            loss = eval_model(input_img, cls_targets)
-
-            batch_loss.append(loss.item())
+            loss, pred = eval_model(input_img, cls_targets)
 
             optimizer.zero_grad()
-
             loss.backward()
-
-            # Accumulates gradient before each step
-            # if learn_batch_counter % opt.gradient_accumulations:
             optimizer.step()
 
             batch_step_counter += 1
-            # learn_step_counter += 1
-
-            # Post-processing after one batch.
             learn_batch_counter += 1
 
             print("Ep-bt: {}-{} | Loss: {}".format(i_epoch, i_batch, loss.item()))
+            logger.add_scalar('loss/loss', loss.item(), learn_batch_counter)
 
-            batch_loss_mean = sum(batch_loss) / len(batch_loss)
-            logger.add_scalar('loss/loss', batch_loss_mean, learn_batch_counter)
-
-        # Post-processing after one epoch.
-        learn_epoch_counter += 1
-
-        if learn_epoch_counter % opt.checkpoint_interval == 0:
-            print("Saving model in epoch {}".format(learn_epoch_counter))
+        if (i_epoch + 1) % opt.checkpoint_interval == 0:
+            print("Saving model in epoch {}".format(i_epoch))
             torch.save(eval_model.state_dict(),
-                       exist_or_create_folder("./logs/model/model_params_{}.ckpt".format(learn_epoch_counter)))
+                       exist_or_create_folder("./logs/model/model_params_{}.ckpt".format(i_epoch)))
 
         # Evaluate the model on the validation set
-        if learn_epoch_counter % opt.evaluation_interval == 0:
-            pass
+        if (i_epoch + 1) % opt.evaluation_interval == 0:
+            precision, recall, AP, f1, ap_class = evaluate(
+                eval_model,
+                [opt.year, 'val'],
+                [0.5, 0.5, 0.5],
+                batch_size,
+                True,
+                diagnosis_code=1
+            )
+            evaluation_metrics = [
+                ("val_precision", precision.mean()),
+                ("val_recall", recall.mean()),
+                ("val_mAP", AP.mean()),
+                ("val_f1", f1.mean()),
+            ]
+            for tag, value in evaluation_metrics:
+                logger.add_scalar("val/{}".format(tag), value.item(), i_epoch)
 
-        # Evaluate the model on the training set
-        if learn_epoch_counter % opt.evaluation_interval == 0:
-            pass
+            # Print class APs and mAP
+            ap_table = [["Index", "Class name", "AP"]]
+            for i, c in enumerate(ap_class):
+                ap_table += [[c, val2labels(c), "%.5f" % AP[i]]]
+            print(AsciiTable(ap_table).table)
+            print(f"---- mAP {AP.mean()}")
 
         # Warmup and lr decay
         scheduler_warmup.step()

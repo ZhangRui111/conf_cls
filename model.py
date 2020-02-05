@@ -151,8 +151,6 @@ class Darknet(nn.Module):
         self.noobj_scale = 0.5  # trade off when calculate loss_conf
         self.conf_scale = 1  # trade off when calculate loss_conf
         self.cls_scale = 1  # trade off when calculate loss_conf
-        self.conf_cls_scale = 0.5  # trade off between loss_conf_cls and loss_loc
-        self.loc_scale = 1  # trade off between loss_conf_cls and loss_loc
 
     def forward(self, x, cls_targets=None):
         layer_outputs, dqnyolo_outputs = [], []
@@ -257,9 +255,7 @@ class Darknet(nn.Module):
         if cls_targets is None:
             return dqnyolo_conf_cls_outputs
         else:
-            loss = loss_conf_cls
-            # print("loss: ", loss.item())
-            return loss, dqnyolo_conf_cls_outputs
+            return loss_conf_cls, dqnyolo_conf_cls_outputs
 
     def load_darknet_weights(self, weights_path):
         """

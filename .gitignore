@@ -1,0 +1,13 @@
+# Byte-compiled / optimized / DLL files
+**/__pycache__/*
+**/.idea/*
+
+# My configurations:
+**/data/*
+**/dataset/*
+**/logs/*
+**/backup/*
+*.iml
+*.txt
+*.xml
+events*

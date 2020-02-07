@@ -104,3 +104,29 @@ def evaluate(model, dataset_des, thres, batch_size, init_dim_cluster, diagnosis_
     precision, recall, AP, f1, ap_class = ap_per_class(true_positives, pred_scores, pred_labels, labels)
 
     return precision, recall, AP, f1, ap_class
+
+
+def main():
+    # Initiate model
+    eval_model = Darknet("config/net/resnet_dropout.cfg").to('cuda')
+    eval_model.load_state_dict(torch.load("./logs/model/model_params_99.ckpt"))
+    precision, recall, AP, f1, ap_class = evaluate(
+        eval_model,
+        ['2012', 'val'],
+        [0.5, 0.5, 0.5],
+        4,
+        True,
+        diagnosis_code=1
+    )
+    evaluation_metrics = [
+        ("val_precision", precision.mean()),
+        ("val_recall", recall.mean()),
+        ("val_mAP", AP.mean()),
+        ("val_f1", f1.mean()),
+    ]
+    for tag, value in evaluation_metrics:
+        print("{}: {}".format(tag, value.item()))
+
+
+if __name__ == '__main__':
+    main()

@@ -102,7 +102,8 @@ def create_modules(module_defs):
             kernel_size = int(module_def["size"])
             atv = module_def["activation"]
             pad = (kernel_size - 1) // 2
-            # pad = int(module_def["pad"])
+            dropout = int(module_def["dropout"])
+
             modules.add_module(
                 f"conv_{module_i}",
                 nn.Conv2d(
@@ -117,6 +118,9 @@ def create_modules(module_defs):
             if bn:
                 modules.add_module(f"batch_norm_{module_i}",
                                    nn.BatchNorm2d(filters, momentum=bn_momentum, eps=bn_eps))
+            if dropout:
+                probability = float(module_def["p"])
+                modules.add_module(f"dropout_{module_i}", nn.Dropout2d(p=probability))
             if atv == "leaky":
                 modules.add_module(f"leaky_{module_i}", nn.LeakyReLU(0.1))
             elif atv == "relu":

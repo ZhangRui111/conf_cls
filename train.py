@@ -20,7 +20,6 @@ from evaluation import evaluate
 from terminaltables import AsciiTable
 
 
-
 def main():
     # Hyperparameters parser
     parser = argparse.ArgumentParser()
@@ -28,7 +27,7 @@ def main():
     parser.add_argument("--set", type=str, default='train', help="used to select training set")
     parser.add_argument("--epochs", type=int, default=201, help="number of epochs")
     parser.add_argument("--batch_size", type=int, default=8, help="size of each image batch")
-    parser.add_argument("--model_def", type=str, default="config/net/resnet.cfg", help="path to model definition file")
+    parser.add_argument("--model_def", type=str, default="config/net/resnet_dropout.cfg", help="path to model definition file")
     # parser.add_argument("--model_def", type=str, default="config/net/dqnyolo_large.cfg", help="path to model definition file")
     # parser.add_argument("--model_def", type=str, default="config/net/dqnyolo_mini.cfg", help="path to model definition file")
     # parser.add_argument("--model_def", type=str, default="config/net/dqnyolo_tiny.cfg", help="path to model definition file")
@@ -66,7 +65,7 @@ def main():
         print("Initialize model randomly")
         eval_model.apply(weights_init_normal)
     # eval_model.load_state_dict(torch.load("./logs/saved_exp/master-v2/model_params_80.ckpt"))
-    # print(model)
+    print(eval_model)
     summary(eval_model, (3, 416, 416))
 
     learn_batch_counter = 0  # for logger update (total numbers)
@@ -168,7 +167,33 @@ def main():
             for i, c in enumerate(ap_class):
                 ap_table += [[c, val2labels(c), "%.5f" % AP[i]]]
             print(AsciiTable(ap_table).table)
-            print(f"---- mAP {AP.mean()}")
+            print(f"---- validation mAP {AP.mean()}")
+
+        # Evaluate the model on the training set
+        if (i_epoch + 1) % opt.evaluation_interval == 0:
+            precision, recall, AP, f1, ap_class = evaluate(
+                eval_model,
+                [opt.year, 'train'],
+                [0.5, 0.5, 0.5],
+                batch_size,
+                True,
+                diagnosis_code=1
+            )
+            evaluation_metrics = [
+                ("train_precision", precision.mean()),
+                ("train_recall", recall.mean()),
+                ("train_mAP", AP.mean()),
+                ("train_f1", f1.mean()),
+            ]
+            for tag, value in evaluation_metrics:
+                logger.add_scalar("train/{}".format(tag), value.item(), i_epoch)
+
+            # Print class APs and mAP
+            ap_table = [["Index", "Class name", "AP"]]
+            for i, c in enumerate(ap_class):
+                ap_table += [[c, val2labels(c), "%.5f" % AP[i]]]
+            print(AsciiTable(ap_table).table)
+            print(f"---- training mAP {AP.mean()}")
 
         # Warmup and lr decay
         scheduler_warmup.step()
